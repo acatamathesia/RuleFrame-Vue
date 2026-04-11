@@ -2,7 +2,7 @@
   <div class="dashboard">
     <div class="dashboard-header">
       <h2>仪表盘</h2>
-      <p>欢迎回来，{{ authStore.user?.username }}！</p>
+      <p>欢迎回来，{{ authStore.user?.nickname || authStore.user?.username }}！</p>
     </div>
 
     <el-row :gutter="20" class="stats-row">
@@ -14,7 +14,7 @@
             </div>
             <div class="stat-info">
               <div class="stat-label">规则总数</div>
-              <div class="stat-value">128</div>
+              <div class="stat-value">{{ stats.totalRules }}</div>
             </div>
           </div>
         </el-card>
@@ -27,7 +27,7 @@
             </div>
             <div class="stat-info">
               <div class="stat-label">用户总数</div>
-              <div class="stat-value">1,024</div>
+              <div class="stat-value">{{ stats.totalUsers }}</div>
             </div>
           </div>
         </el-card>
@@ -40,7 +40,7 @@
             </div>
             <div class="stat-info">
               <div class="stat-label">执行次数</div>
-              <div class="stat-value">52,432</div>
+              <div class="stat-value">{{ stats.todayExecutions?.toLocaleString() }}</div>
             </div>
           </div>
         </el-card>
@@ -53,7 +53,7 @@
             </div>
             <div class="stat-info">
               <div class="stat-label">成功率</div>
-              <div class="stat-value">98.5%</div>
+              <div class="stat-value">{{ stats.successRate }}%</div>
             </div>
           </div>
         </el-card>
@@ -66,7 +66,7 @@
           <template #header>
             <div class="card-header">
               <span>规则执行趋势</span>
-              <el-button text>更多</el-button>
+              <el-button text @click="refreshData">刷新</el-button>
             </div>
           </template>
           <div class="chart-placeholder">
@@ -98,10 +98,21 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { getDashboardStats } from '@/api/system'
+import type { DashboardStats } from '@/api/types'
 
 const authStore = useAuthStore()
+
+const stats = ref<DashboardStats>({
+  totalRules: 0,
+  totalUsers: 0,
+  todayExecutions: 0,
+  successRate: 0,
+  activeRules: 0,
+  runningDays: 0
+})
 
 const activities = ref([
   { content: '用户 admin 更新了规则 #128', time: '2024-02-12 14:30' },
@@ -110,6 +121,23 @@ const activities = ref([
   { content: '规则 #127 已发布到生产环境', time: '2024-02-12 10:20' },
   { content: '系统备份已完成', time: '2024-02-12 08:00' }
 ])
+
+const fetchData = async () => {
+  try {
+    const res = await getDashboardStats()
+    stats.value = res.data
+  } catch (error) {
+    console.error('获取统计数据失败', error)
+  }
+}
+
+const refreshData = () => {
+  fetchData()
+}
+
+onMounted(() => {
+  fetchData()
+})
 </script>
 
 <style scoped>

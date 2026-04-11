@@ -12,18 +12,29 @@
           router
           class="sidebar-menu"
         >
-          <el-menu-item index="/dashboard">
-            <el-icon><DataAnalysis /></el-icon>
-            <template #title>仪表盘</template>
-          </el-menu-item>
-          <el-menu-item index="/rules">
-            <el-icon><Document /></el-icon>
-            <template #title>规则管理</template>
-          </el-menu-item>
-          <el-menu-item index="/users">
-            <el-icon><User /></el-icon>
-            <template #title>用户管理</template>
-          </el-menu-item>
+          <!-- 动态菜单 -->
+          <template v-for="menu in authStore.menus" :key="menu.id">
+            <!-- 目录类型(menuType=1)或有子菜单的显示为子菜单 -->
+            <el-sub-menu v-if="menu.menuType === 1 || (menu.children && menu.children.length > 0)" :index="menu.menuCode">
+              <template #title>
+                <el-icon><component :is="getIconComponent(menu.icon)" /></el-icon>
+                <span>{{ menu.menuName }}</span>
+              </template>
+              <el-menu-item 
+                v-for="child in menu.children" 
+                :key="child.id" 
+                :index="child.path"
+              >
+                <el-icon><component :is="getIconComponent(child.icon)" /></el-icon>
+                <template #title>{{ child.menuName }}</template>
+              </el-menu-item>
+            </el-sub-menu>
+            <!-- 菜单类型(menuType=2)且无子菜单的显示为菜单项 -->
+            <el-menu-item v-else :index="menu.path">
+              <el-icon><component :is="getIconComponent(menu.icon)" /></el-icon>
+              <template #title>{{ menu.menuName }}</template>
+            </el-menu-item>
+          </template>
         </el-menu>
       </el-aside>
       <el-container>
@@ -42,13 +53,13 @@
             <el-dropdown @command="handleCommand">
               <div class="user-info">
                 <el-avatar :size="32" :icon="UserFilled" />
-                <span class="username">{{ authStore.user?.username || '用户' }}</span>
+                <span class="username">{{ authStore.user?.nickname || authStore.user?.username || '用户' }}</span>
                 <el-icon class="dropdown-icon"><ArrowDown /></el-icon>
               </div>
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="profile">个人中心</el-dropdown-item>
-                  <el-dropdown-item command="settings">系统设置</el-dropdown-item>
+                  <el-dropdown-item command="/system/settings">系统设置</el-dropdown-item>
                   <el-dropdown-item divided command="logout">退出登录</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
@@ -64,9 +75,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { UserFilled, Menu, Setting, Document, DataAnalysis, User } from '@element-plus/icons-vue'
+import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 
@@ -78,13 +91,19 @@ const appStore = useAppStore()
 const currentRoute = computed(() => route.path)
 const currentRouteMeta = computed(() => route.meta.title as string | undefined)
 
+// 动态获取图标组件
+const getIconComponent = (iconName: string | undefined) => {
+  if (!iconName) return Document
+  return (ElementPlusIconsVue as any)[iconName] || Document
+}
+
 const handleCommand = (command: string) => {
   switch (command) {
     case 'profile':
-      ElMessage.info('个人中心功能开发中')
+      router.push('/profile')
       break
     case 'settings':
-      ElMessage.info('系统设置功能开发中')
+      router.push('/settings')
       break
     case 'logout':
       ElMessageBox.confirm('确定要退出登录吗？', '提示', {
@@ -161,6 +180,19 @@ const handleCommand = (command: string) => {
   background: #263445;
   color: #409eff;
   border-right: 3px solid #409eff;
+}
+
+:deep(.el-sub-menu__title) {
+  color: #bfcbd9;
+}
+
+:deep(.el-sub-menu__title:hover) {
+  background: #263445;
+  color: #409eff;
+}
+
+:deep(.el-sub-menu.is-active > .el-sub-menu__title) {
+  color: #409eff;
 }
 
 .header {
