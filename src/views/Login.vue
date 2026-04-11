@@ -55,7 +55,6 @@ import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
-import { login as loginApi } from '@/api/auth'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -91,31 +90,14 @@ const handleLogin = async () => {
     if (valid) {
       loading.value = true
       try {
-        // 尝试调用后端API登录
-        try {
-          const res = await loginApi({
-            username: loginForm.username,
-            password: loginForm.password
-          })
-          
-          authStore.token = res.data.token
-          authStore.user = res.data.user
-          authStore.menus = res.data.menus || []
-          localStorage.setItem('token', res.data.token)
-          localStorage.setItem('user', JSON.stringify(res.data.user))
-          localStorage.setItem('menus', JSON.stringify(res.data.menus || []))
-          
-        } catch (apiError) {
-          // 如果API调用失败，使用本地模拟登录
-          console.error('后端API登录失败，使用模拟登录:', apiError)
-          const success = await authStore.login(loginForm.username, loginForm.password)
-          if (!success) {
-            ElMessage.error('登录失败，请检查用户名和密码')
-            return
-          }
+        // 使用authStore的登录方法
+        const success = await authStore.login(loginForm.username, loginForm.password)
+        if (success) {
+          ElMessage.success('登录成功')
+          router.push('/')
+        } else {
+          ElMessage.error('登录失败，请检查用户名和密码')
         }
-        ElMessage.success('登录成功')
-        router.push('/')
       } catch (error) {
         console.error('登录异常:', error)
         ElMessage.error('登录失败，请重试')

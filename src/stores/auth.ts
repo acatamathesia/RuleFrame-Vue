@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { UserDTO, Menu } from '@/api/types'
+import type { UserDTO, Menu, LoginResponse } from '@/api/types'
+import { login as apiLogin, getProfile } from '@/api/auth'
+import { getMenuTreeByUserId } from '@/api/menu'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<UserDTO | null>(null)
@@ -8,31 +10,6 @@ export const useAuthStore = defineStore('auth', () => {
   const menus = ref<Menu[]>([])
 
   const isAuthenticated = computed(() => !!token.value)
-
-  function login(username: string, password: string): Promise<boolean> {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        if (username && password) {
-          token.value = 'mock-token-' + Date.now()
-          user.value = { 
-            id: 1,
-            username, 
-            nickname: username === 'admin' ? '管理员' : username,
-            email: username + '@ruleframe.com',
-            phone: '13800138000',
-            status: 1,
-            role: username === 'admin' ? 'admin' : 'user',
-            createTime: new Date().toISOString()
-          }
-          localStorage.setItem('token', token.value)
-          localStorage.setItem('user', JSON.stringify(user.value))
-          resolve(true)
-        } else {
-          resolve(false)
-        }
-      }, 500)
-    })
-  }
 
   function logout() {
     user.value = null
@@ -56,13 +33,62 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /**
+   * 加载用户菜单
+   */
+  async function loadMenus() {
+    if (!user.value) {
+      return
+    }
+
+    try {
+      // 从后端获取用户菜单
+      const response = await getMenuTreeByUserId(user.value.id)
+      menus.value = response.data || []
+      // 保存到localStorage
+      localStorage.setItem('menus', JSON.stringify(menus.value))
+    } catch (error) {
+      console.error('加载菜单失败:', error)
+      // 如果失败，使用空菜单
+      menus.value = []
+    }
+  }
+
+  /**
+   * 登录
+   */
+  async function loginWithApi(username: string, password: string): Promise<boolean> {
+    try {
+      const response = await apiLogin({ username, password })
+      
+      if (response.code === 200 && response.data) {
+        const loginData = response.data as LoginResponse
+        token.value = loginData.token
+        user.value = loginData.user
+        menus.value = loginData.menus || []
+        
+        // 保存到localStorage
+        localStorage.setItem('token', token.value)
+        localStorage.setItem('user', JSON.stringify(user.value))
+        localStorage.setItem('menus', JSON.stringify(menus.value))
+        
+        return true
+      }
+      return false
+    } catch (error) {
+      console.error('登录失败:', error)
+      return false
+    }
+  }
+
   return {
     user,
     token,
     menus,
     isAuthenticated,
-    login,
+    login: loginWithApi,
     logout,
-    checkAuth
+    checkAuth,
+    loadMenus
   }
 })

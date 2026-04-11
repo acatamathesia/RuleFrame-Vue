@@ -288,14 +288,16 @@ const handleDelete = (row: Role) => {
 
 // 分配菜单
 const handleAssignMenu = async (row: Role) => {
-  currentRoleId.value = row.id!
+  console.log('分配菜单 - 角色信息:', row)
+  currentRoleId.value = Number(row.id)!
+  console.log('当前角色ID:', currentRoleId.value)
   menuDialogVisible.value = true
   
   // 加载菜单树
   try {
     const [menuTreeRes, roleMenuIdsRes] = await Promise.all([
       getMenuTree(),
-      getRoleMenuIds(row.id!)
+      getRoleMenuIds(Number(row.id)!)
     ])
     menuTreeData.value = menuTreeRes.data
     checkedMenuIds.value = roleMenuIdsRes.data
@@ -306,16 +308,21 @@ const handleAssignMenu = async (row: Role) => {
 
 // 提交菜单分配
 const handleMenuSubmit = async () => {
+  console.log('提交菜单分配 - 角色ID:', currentRoleId.value)
   menuSubmitLoading.value = true
   try {
     const checkedKeys = menuTreeRef.value?.getCheckedKeys() || []
     const halfCheckedKeys = menuTreeRef.value?.getHalfCheckedKeys() || []
     const allMenuIds = [...checkedKeys, ...halfCheckedKeys]
     
-    await assignMenus(currentRoleId!, allMenuIds)
+    console.log('选中的菜单IDs:', allMenuIds)
+    console.log('调用 assignMenus, roleId:', currentRoleId.value)
+    
+    await assignMenus(Number(currentRoleId.value!), allMenuIds)
     ElMessage.success('分配成功')
     menuDialogVisible.value = false
   } catch (error) {
+    console.error('分配菜单失败:', error)
     ElMessage.error('分配失败')
   } finally {
     menuSubmitLoading.value = false

@@ -116,9 +116,19 @@ export function updateRoleStatus(id: number, status: number) {
 /**
  * 为角色分配菜单
  */
-export function assignMenus(roleId: number, menuIds: number[]) {
+export function assignMenus(roleId: number | string, menuIds: number[]) {
+  console.log('assignMenus 调用参数:', { roleId, menuIds })
+  console.log('roleId 类型:', typeof roleId)
+  
+  // 确保 roleId 是数字
+  const id = Number(roleId)
+  if (isNaN(id)) {
+    console.error('无效的角色ID:', roleId)
+    return Promise.reject(new Error('无效的角色ID'))
+  }
+  
   return request({
-    url: `/roles/${roleId}/menus`,
+    url: `/roles/${id}/menus`,
     method: 'post',
     data: { menuIds }
   })
@@ -127,9 +137,16 @@ export function assignMenus(roleId: number, menuIds: number[]) {
 /**
  * 查询角色的菜单ID列表
  */
-export function getRoleMenuIds(roleId: number) {
+export function getRoleMenuIds(roleId: number | string) {
+  // 确保 roleId 是数字
+  const id = Number(roleId)
+  if (isNaN(id)) {
+    console.error('无效的角色ID:', roleId)
+    return Promise.reject(new Error('无效的角色ID'))
+  }
+  
   return request<number[]>({
-    url: `/roles/${roleId}/menus`,
+    url: `/roles/${id}/menus`,
     method: 'get'
   })
 }
