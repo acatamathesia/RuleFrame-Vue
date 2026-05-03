@@ -38,6 +38,7 @@
       >
         <el-table-column type="selection" width="55" />
         <el-table-column type="index" label="序号" width="60" />
+        <el-table-column prop="code" label="元素编码" width="120" />
         <el-table-column prop="elementName" label="元素名称" min-width="150" />
         <el-table-column prop="elementPath" label="元素路径" min-width="200" />
         <el-table-column prop="needConvert" label="是否类型转换" width="120">
@@ -49,12 +50,12 @@
         </el-table-column>
         <el-table-column prop="dataType" label="数据类型" width="120">
           <template #default="{ row }">
-            <el-tag :type="getDataTypeTagType(row.dataType)">
+            <el-tag v-if="row.needConvert" :type="getDataTypeTagType(row.dataType)">
               {{ getDataTypeLabel(row.dataType) }}
             </el-tag>
+            <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column prop="groupName" label="分组" min-width="120" />
         <el-table-column prop="updateTime" label="更新时间" width="180">
           <template #default="{ row }">
             {{ formatDateTime(row.updateTime) }}
@@ -94,25 +95,25 @@
         :rules="formRules"
         label-width="120px"
       >
+        <el-form-item label="元素编码" prop="code">
+          <el-input v-model="formData.code" placeholder="请输入元素编码" />
+        </el-form-item>
         <el-form-item label="元素名称" prop="elementName">
           <el-input v-model="formData.elementName" placeholder="请输入元素名称" />
         </el-form-item>
         <el-form-item label="元素路径" prop="elementPath">
-          <el-input v-model="formData.elementPath" placeholder="请输入元素路径" />
+          <el-input v-model="formData.elementPath" placeholder="请输入元素路径（JSONPath表达式）" />
         </el-form-item>
         <el-form-item label="是否类型转换" prop="needConvert">
-          <el-switch v-model="formData.needConvert" />
+          <el-switch v-model="formData.needConvert" @change="handleConvertChange" />
         </el-form-item>
-        <el-form-item label="数据类型" prop="dataType">
+        <el-form-item v-if="formData.needConvert" label="数据类型" prop="dataType">
           <el-select v-model="formData.dataType" placeholder="请选择数据类型">
             <el-option label="字符串" value="string" />
             <el-option label="数字" value="number" />
             <el-option label="布尔" value="boolean" />
             <el-option label="日期" value="date" />
           </el-select>
-        </el-form-item>
-        <el-form-item label="分组" prop="groupName">
-          <el-input v-model="formData.groupName" placeholder="请输入分组名称" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -124,26 +125,26 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { Search, Plus, Delete } from '@element-plus/icons-vue'
-
-interface RuleElement {
-  id: number
-  elementName: string
-  elementPath: string
-  needConvert: boolean
-  dataType: string
-  groupName: string
-  updateTime: string
-}
+import {
+  pageQueryRuleElements,
+  createRuleElement,
+  updateRuleElement,
+  deleteRuleElement,
+  batchDeleteRuleElements,
+  type SetElementDTO,
+  type SetElementCreateRequest,
+  type SetElementUpdateRequest
+} from '@/api/ruleElement'
 
 const loading = ref(false)
 const submitLoading = ref(false)
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const formRef = ref<FormInstance>()
-const selectedRows = ref<RuleElement[]>([])
+const selectedRows = ref<SetElementDTO[]>([])
 
 const searchForm = reactive({
   keyword: '',
@@ -156,20 +157,23 @@ const pagination = reactive({
   total: 0
 })
 
-const tableData = ref<RuleElement[]>([])
+const tableData = ref<SetElementDTO[]>([])
 
 const dialogTitle = ref('新增元素')
 
 const formData = reactive({
   id: undefined as number | undefined,
+  code: '',
   elementName: '',
   elementPath: '',
   needConvert: false,
-  dataType: 'string',
-  groupName: ''
+  dataType: 'string'
 })
 
 const formRules: FormRules = {
+  code: [
+    { required: true, message: '请输入元素编码', trigger: 'blur' }
+  ],
   elementName: [
     { required: true, message: '请输入元素名称', trigger: 'blur' }
   ],
@@ -178,9 +182,6 @@ const formRules: FormRules = {
   ],
   dataType: [
     { required: true, message: '请选择数据类型', trigger: 'change' }
-  ],
-  groupName: [
-    { required: true, message: '请输入分组名称', trigger: 'blur' }
   ]
 }
 
@@ -212,38 +213,14 @@ const formatDateTime = (dateStr: string) => {
 const fetchData = async () => {
   loading.value = true
   try {
-    // TODO: 调用实际的 API 接口
-    // const res = await listRuleElements({
-    //   keyword: searchForm.keyword || undefined,
-    //   dataType: searchForm.dataType || undefined,
-    //   pageNum: pagination.pageNum,
-    //   pageSize: pagination.pageSize
-    // })
-    // tableData.value = res.data.list
-    // pagination.total = res.data.total
-    
-    // 模拟数据
-    tableData.value = [
-      {
-        id: 1,
-        elementName: '用户名称',
-        elementPath: '$.user.name',
-        needConvert: false,
-        dataType: 'string',
-        groupName: '用户信息',
-        updateTime: '2024-01-15T10:30:00'
-      },
-      {
-        id: 2,
-        elementName: '用户年龄',
-        elementPath: '$.user.age',
-        needConvert: true,
-        dataType: 'number',
-        groupName: '用户信息',
-        updateTime: '2024-01-15T11:20:00'
-      }
-    ]
-    pagination.total = 2
+    const res = await pageQueryRuleElements({
+      keyword: searchForm.keyword || undefined,
+      dataType: searchForm.dataType || undefined,
+      pageNum: pagination.pageNum,
+      pageSize: pagination.pageSize
+    })
+    tableData.value = res.data.list
+    pagination.total = res.data.total
   } catch (error: any) {
     ElMessage.error(error.message || '获取数据失败')
   } finally {
@@ -265,11 +242,11 @@ const handleReset = () => {
 
 const resetForm = () => {
   formData.id = undefined
+  formData.code = ''
   formData.elementName = ''
   formData.elementPath = ''
   formData.needConvert = false
   formData.dataType = 'string'
-  formData.groupName = ''
 }
 
 const handleAdd = () => {
@@ -279,16 +256,24 @@ const handleAdd = () => {
   dialogVisible.value = true
 }
 
-const handleEdit = (row: RuleElement) => {
+/** 类型转换开关变化时，关闭则清空数据类型并清除校验 */
+const handleConvertChange = (val: boolean) => {
+  if (!val) {
+    formData.dataType = 'string'
+    formRef.value?.clearValidate('dataType')
+  }
+}
+
+const handleEdit = (row: SetElementDTO) => {
   resetForm()
   isEdit.value = true
   dialogTitle.value = '编辑元素'
   formData.id = row.id
+  formData.code = row.code
   formData.elementName = row.elementName
   formData.elementPath = row.elementPath
   formData.needConvert = row.needConvert
   formData.dataType = row.dataType
-  formData.groupName = row.groupName
   dialogVisible.value = true
 }
 
@@ -299,12 +284,27 @@ const handleSubmit = async () => {
     if (valid) {
       submitLoading.value = true
       try {
-        // TODO: 调用实际的 API 接口
         if (isEdit.value) {
-          // await updateRuleElement(formData.id!, formData)
+          const requestData: SetElementUpdateRequest = {
+            code: formData.code,
+            name: formData.elementName,
+            elPath: formData.elementPath,
+            converted: formData.needConvert ? 1 : 0,
+            convertType: formData.dataType,
+            enabled: 1
+          }
+          await updateRuleElement(formData.id!, requestData)
           ElMessage.success('更新成功')
         } else {
-          // await createRuleElement(formData)
+          const requestData: SetElementCreateRequest = {
+            code: formData.code,
+            name: formData.elementName,
+            elPath: formData.elementPath,
+            converted: formData.needConvert ? 1 : 0,
+            convertType: formData.dataType,
+            enabled: 1
+          }
+          await createRuleElement(requestData)
           ElMessage.success('创建成功')
         }
         dialogVisible.value = false
@@ -318,15 +318,14 @@ const handleSubmit = async () => {
   })
 }
 
-const handleDelete = (row: RuleElement) => {
+const handleDelete = (row: SetElementDTO) => {
   ElMessageBox.confirm(`确定要删除元素 "${row.elementName}" 吗？`, '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
   }).then(async () => {
     try {
-      // TODO: 调用实际的 API 接口
-      // await deleteRuleElement(row.id)
+      await deleteRuleElement(row.id)
       ElMessage.success('删除成功')
       fetchData()
     } catch (error: any) {
@@ -342,9 +341,8 @@ const handleBatchDelete = () => {
     type: 'warning'
   }).then(async () => {
     try {
-      // TODO: 调用实际的 API 接口
-      // const ids = selectedRows.value.map(row => row.id)
-      // await batchDeleteRuleElements(ids)
+      const ids = selectedRows.value.map(row => row.id)
+      await batchDeleteRuleElements(ids)
       ElMessage.success('批量删除成功')
       fetchData()
     } catch (error: any) {
@@ -353,7 +351,7 @@ const handleBatchDelete = () => {
   }).catch(() => {})
 }
 
-const handleSelectionChange = (selection: RuleElement[]) => {
+const handleSelectionChange = (selection: SetElementDTO[]) => {
   selectedRows.value = selection
 }
 
