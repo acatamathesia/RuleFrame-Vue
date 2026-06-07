@@ -20,7 +20,6 @@ const layoutRoute: RouteRecordRaw = {
   redirect: '/dashboard',
   meta: { requiresAuth: true },
   children: [
-    // 添加一个临时的默认路由,避免初始重定向失败
     {
       path: 'dashboard',
       name: 'Dashboard',
@@ -31,7 +30,6 @@ const layoutRoute: RouteRecordRaw = {
 }
 
 // 使用 Vite 的 import.meta.glob 预加载所有 views 下的 Vue 组件
-// 这样可以避免动态 import 的路径变量限制
 const viewsModules = import.meta.glob('@/views/**/*.vue')
 
 /**
@@ -44,17 +42,14 @@ function loadComponent(componentPath: string): any {
     return null
   }
 
-  // 移除可能的前导斜杠
   const path = componentPath.startsWith('/') ? componentPath.substring(1) : componentPath
   
-  // 构造模块路径 - 使用 /src/views/ 而不是 @/views/
-  const modulePath = `/src/views/${path}.vue`
+  const modulePath = '/src/views/' + path + '.vue'
   
-  // 从预加载的模块中获取
   const componentLoader = viewsModules[modulePath]
   
   if (!componentLoader) {
-    console.warn(`未找到组件: ${modulePath}`)
+    console.warn('未找到组件: ' + modulePath)
     return null
   }
   
@@ -68,181 +63,161 @@ function generateRoutes(menus: Menu[]): RouteRecordRaw[] {
   const routes: RouteRecordRaw[] = []
 
   for (const menu of menus) {
-    // 跳过按钮类型和隐藏的菜单
     if (menu.menuType === 3 || menu.visible === 0 || menu.status === 0) {
       continue
     }
 
-    // 如果有路径,创建路由
     if (menu.path) {
       const route: any = {
         path: menu.path,
-        name: menu.menuCode || menu.menuName,
+        name: menu.menuCode,
         meta: {
           title: menu.menuName,
-          icon: menu.icon
+          icon: menu.icon,
+          requiresAuth: menu.menuType !== 1,
+          keepAlive: true
         }
       }
 
-      // 设置组件 - 从数据库的 component 字段动态加载
-      if (menu.component) {
-        route.component = loadComponent(menu.component)
+      if (menu.menuType === 1) {
+        route.component = () => import('@/layouts/RouteView.vue')
       } else if (menu.menuType === 2) {
-        // 菜单类型但没有指定组件,使用路径的最后一段作为组件名
-        const componentName = menu.path.split('/').pop()
-        if (componentName) {
-          route.component = loadComponent(componentName)
+        // 先尝试加载,如果组件不存在则使用默认占位组件
+        const component = loadComponent(menu.component || '')
+        if (component) {
+          route.component = component
+        } else {
+          // 使用占位组件
+          route.component = () => import('@/layouts/RouteView.vue')
         }
       }
 
-      // 递归处理子菜单
       if (menu.children && menu.children.length > 0) {
-        const childRoutes = generateRoutes(menu.children)
-        if (childRoutes.length > 0) {
-          route.children = childRoutes
-          // 如果有子路由且没有设置重定向,设置默认重定向到第一个子路由
-          if (!route.redirect && childRoutes.length > 0) {
-            route.redirect = childRoutes[0].path
-          }
-        }
+        route.redirect = menu.path
+        route.children = generateRoutes(menu.children)
       }
 
       routes.push(route)
+    } else if (menu.menuType === 1 && menu.children && menu.children.length > 0) {
+      // 目录类型没有path,但可能有子菜单
+      routes.push(...generateRoutes(menu.children))
     }
   }
 
   return routes
 }
 
-/**
- * 添加动态路由
- */
-export function addDynamicRoutes(): boolean {
-  const authStore = useAuthStore()
-  
-  // 如果已经有动态路由,不再添加
-  if (authStore.menus.length === 0) {
-    return false
-  }
-
-  // 移除旧的布局路由
-  const routes = router.getRoutes()
-  const layoutRouteName = layoutRoute.name
-  if (layoutRouteName && routes.find(r => r.name === layoutRouteName)) {
-    router.removeRoute(layoutRouteName)
-  }
-
-  // 清空现有子路由
-  layoutRoute.children = []
-
-  // 生成动态路由
-  const dynamicRoutes = generateRoutes(authStore.menus)
-  
-  // 添加动态路由到布局路由
-  layoutRoute.children?.push(...dynamicRoutes)
-
-  // 确保有默认重定向
-  if (!layoutRoute.children?.some(r => r.path === 'dashboard')) {
-    // 如果没有仪表盘路由,添加一个默认的
-    const defaultDashboardRoute: RouteRecordRaw = {
-      path: 'dashboard',
-      name: 'Dashboard',
-      component: () => import('@/views/Dashboard.vue'),
-      meta: { title: '仪表盘', icon: 'HomeFilled' }
-    }
-    layoutRoute.children?.push(defaultDashboardRoute)
-    
-    // 如果没有其他菜单,重定向到 dashboard
-    if (dynamicRoutes.length === 0) {
-      layoutRoute.redirect = '/dashboard'
-    } else if (dynamicRoutes.length > 0) {
-      // 有其他菜单,重定向到第一个菜单
-      layoutRoute.redirect = dynamicRoutes[0].path
-    }
-  }
-
-  // 重新添加布局路由
-  router.addRoute(layoutRoute)
-
-  console.log('动态路由已加载,共', dynamicRoutes.length, '个路由')
-
-  return true
-}
-
-// 创建路由器（初始只包含静态路由）
 const router = createRouter({
   history: createWebHistory(),
-  routes: staticRoutes
+  routes: [...staticRoutes, layoutRoute]
 })
 
-// 标记动态路由是否已经加载
-let dynamicRoutesLoaded = false
-
+// 全局路由守卫
 router.beforeEach(async (to, from, next) => {
+  console.log('路由守卫: 从', from.path, '到', to.path)
+  console.log('路由守卫: 完整路径', to.fullPath)
+  console.log('路由守卫: 路径信息', {
+    path: to.path,
+    fullPath: to.fullPath,
+    matched: to.matched.map(r => r.path),
+    meta: to.meta
+  })
+  
   const authStore = useAuthStore()
-  const isAuthenticated = authStore.isAuthenticated
-
-  console.log('路由守卫:', { to: to.path, from: from.path, isAuthenticated, dynamicRoutesLoaded })
-
-  // 如果访问登录页
+  
   if (to.path === '/login') {
-    if (isAuthenticated) {
-      next('/')
+    // 如果已登录,重定向到首页
+    if (authStore.isLoggedIn) {
+      next('/dashboard')
     } else {
       next()
     }
     return
   }
-
-  // 需要认证的路由
-  if (isAuthenticated) {
-    // 如果动态路由还未加载,尝试加载
-    if (!dynamicRoutesLoaded) {
-      try {
-        console.log('开始加载用户菜单...')
-        
-        // 如果菜单为空,从后端加载
-        if (authStore.menus.length === 0) {
-          await authStore.loadMenus()
-        }
-        
-        console.log('菜单加载完成:', authStore.menus.length, '个菜单')
-        
-        // 添加动态路由
-        if (addDynamicRoutes()) {
-          dynamicRoutesLoaded = true
-          console.log('动态路由加载完成,重新导航到:', to.path)
-          // 重新导航到目标路由
-          next({ ...to, replace: true })
-          return
-        }
-      } catch (error) {
-        console.error('加载菜单失败:', error)
-        authStore.logout()
-        dynamicRoutesLoaded = false
-        next('/login')
-        return
-      }
-    }
-    
-    // 如果动态路由已加载但菜单为空,说明用户没有权限访问任何菜单
-    if (dynamicRoutesLoaded && authStore.menus.length === 0) {
-      console.warn('用户没有可访问的菜单')
+  
+  if (to.meta.requiresAuth !== false) {
+    if (!authStore.isLoggedIn) {
+      // 未登录,跳转登录页
       next('/login')
       return
     }
     
-    // 检查路由是否存在
-    if (to.matched.length === 0) {
-      console.warn('路由不存在,跳转到默认页:', to.path)
-      next('/dashboard') // 路由不存在,跳转到默认页
-    } else {
-      next()
+    // 检查是否有动态路由,如果没有则初始化
+    const menus = authStore.menus
+    if (!menus || menus.length === 0) {
+      try {
+        await authStore.fetchUserInfo()
+        // fetchUserInfo 内部已经调用了 initDynamicRoutes
+        const dynamicRoutes = generateRoutes(authStore.menus)
+        
+        // 移除旧路由并添加新路由
+        for (const route of dynamicRoutes) {
+          router.removeRoute(route.name as string)
+          router.addRoute('Layout', route)
+        }
+        
+        // 尝试重新导航
+        // 注意: 不能直接 next(to.fullPath),会导致无限重定向
+        // 如果当前要去的路径不是dashboard (比如刷新时在规则组页面),
+        // 需要允许继续,但路由可能还没注册
+        next({ ...to, replace: true })
+        return
+      } catch (error) {
+        console.error('获取用户信息失败:', error)
+        next('/login')
+        return
+      }
+    } else if (!router.hasRoute('Users') && authStore.isLoggedIn) {
+      // 如果已登录但没有初始化路由,手动初始化
+      const dynamicRoutes = generateRoutes(menus)
+      for (const route of dynamicRoutes) {
+        if (!router.hasRoute(route.name as string)) {
+          router.addRoute('Layout', route)
+        }
+      }
+      
+      if (to.matched.length === 1 && to.matched[0].name === 'Layout') {
+        next('/dashboard')
+        return
+      }
     }
+    
+    next()
   } else {
-    // 未认证,跳转到登录页
-    next('/login')
+    next()
   }
 })
+
+// 保存原始 addRoute 方法
+const originalAddRoute = router.addRoute.bind(router)
+router.addRoute = function(...args: any[]): any {
+  // 如果是 RouteRecordRaw 对象
+  if (typeof args[0] === 'object') {
+    const route = args[0] as RouteRecordRaw
+    // 如果已经存在同名路由，先移除
+    if (route.name && router.hasRoute(route.name)) {
+      router.removeRoute(route.name)
+    }
+  }
+  // 如果是 parentName, route 两个参数
+  if (typeof args[0] === 'string') {
+    const route = args[1] as RouteRecordRaw
+    if (route.name && router.hasRoute(route.name)) {
+      router.removeRoute(route.name)
+    }
+  }
+  return originalAddRoute(...args)
+}
+
+// 导出供外部使用(如权限更新后刷新路由)
+export function resetRoutes() {
+  // 获取所有动态添加的路由并移除
+  const currentRoutes = router.getRoutes()
+  currentRoutes.forEach(route => {
+    if (route.name && route.name !== 'Layout' && route.name !== 'Login' && route.name !== 'Dashboard') {
+      router.removeRoute(route.name)
+    }
+  })
+}
 
 export default router

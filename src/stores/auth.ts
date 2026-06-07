@@ -10,6 +10,7 @@ export const useAuthStore = defineStore('auth', () => {
   const menus = ref<Menu[]>([])
 
   const isAuthenticated = computed(() => !!token.value)
+  const isLoggedIn = computed(() => !!token.value)
 
   function logout() {
     user.value = null
@@ -86,6 +87,7 @@ export const useAuthStore = defineStore('auth', () => {
     token,
     menus,
     isAuthenticated,
+    isLoggedIn,
     login: loginWithApi,
     logout,
     checkAuth,
